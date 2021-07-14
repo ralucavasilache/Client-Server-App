@@ -1,0 +1,110 @@
+NUME: Vasilache Raluca
+GRUPA: 324CA
+
+
+				Tema #2 : Aplicatie client-server
+				
+	Proiectul contine:
+	- fisierele sursa: server.cpp, subscriber.cpp, utils.h
+	- un fisier Makefile
+	- un fisier README
+	
+	Structura proiectului:
+	
+	Fisierul utils.h contine declararea structurilor folosite pentru comunicarea intre server
+si clientii tcp, respectiv udp:
+	* struct tcp_msg - structura folosita pentru trimiterea de informatii de la clinetul tcp
+	catre server atunci se doreste comunicarea unei actiuni de tip subscribe/unsubrcibe.
+	* struct udp_msg - structura folosita de catre server pentru a trimite update-uri 
+	clientilor tcp
+	* struct client - campuri specifice unui client (socketul, status = connected/
+	disconnected, subscriptions = map de topicuri la care este abonat + cu sf-ul 
+	corespunzator, updates = actualizari primite cat timp sunt deconectati, pentru topicuri
+	cu sf-ul 1, care vor fi trimise la urmatoarea conectare a clientului)
+	* struct udp_payload = structura folosita la primirea pachetelor de la clientul udp
+	
+	
+	1) Subscriber
+	- acesta solitica o conexiune cu serverul al carui ip si port sunt specificate in momentul
+	rularii si trimite imediat id-ul sau pentru ca serverul sa stie ce client se va conecta
+	- el poate primi mesaje de la :
+		a) tastatura : 
+		- exit : se va inchide clientul
+		- subscribe/unsubscribe : se face parsarea liniilor citite de la STDIN,
+		verificandu-se daca sunt dati toti parametri, se memoreaza toata informatia
+		intr-o structura tcp_msg si se trimite catre server
+		b) server
+		- daca serverul inchide conexiunea (numarul de bytes primiti = 0), se va
+		inchide si clientul
+		- altfel inseamna ca s-a primit un update, adica o structura udp_msg,
+		si se va afisa mesajul corespunzator (toate campurile din structura, in formatul
+		mentionat in enunt)
+	2) Server
+	- pentru a realiza redirectionarea de pachete de la clientul udp catre clientii tcp
+	vom folosi 2 map-uri : 
+		-> map<string, vector<string>> subscribers : key = un topic, value  = lista cu
+		id-urile clientilor abonati la acel topic
+		-> map <string, struct client*> clients : key = id-ul, value  = o structura de
+		de tip client
+	- initial se vor adauga in multimea read_fds un socket destinat primirii mesajelor de la
+	clientul udp, un socket pe care se asculta conexiuni tcp, si cel pentru citirea de la
+	 tastatura
+	- el poate primi mesaje :
+		a) de la tastatura:
+		- poate primi de la tastatura comanda exit, caz in care se va inchide server-ul
+		
+		b) pe socketul tcp (cereri de conexiune)
+		- se accepta conexiunea (intrucat este o conexiune orientata) si se primeste un 
+		pachet, continand id-ul clientului care s-a conectat
+		- daca in map-ul de clienti nu exista nicio intrare cu key = id-ul primit, aceasta
+		va fi creata astfel : socket = socketul pe care s-au primit date, status = 
+		connected; se adauga socketul pe care s-au primit datele in multimea read_fds
+		- daca in map-ul de clienti exista deja o intrare cu key = id-ul primit, sunt
+		posibile doua situatii :
+			-> clientul este conectat -> se va genera un mesaj de eroare
+			-> clientul a fost conectat, iar in prezent este inactiv -> se va
+			reconecta (adica vom schimba status din false in true); se vor trimite
+			toate update-urile acumulate in coada in perioada de inactivitate 
+			pentru topicurile cu sf = 1
+		
+		c) pe socketul udp 
+		- in cazul comunicarii cu clientul udp nu exista notiunea de "acceptare" a
+		conexiunii, deci doar se vor primi datele (update-uri pentru un anumit topic ),
+		 intr-o structura de tip udp_payload
+		- se realizeaza conversia datelor din format binar in formatul specificat de
+		campul data_type, urmarind regulile mentionate in enunt
+		- se populeaza o structura udp_msg care urmeaza sa fie trimisa catre toti clientii
+		abonati de topicul pentru care s-a primit update-ul
+		- se extrage din map-ul de subscribers (pe baza key = topicul actual) vectorul de 
+		id-uri corespunzatoare clientilor abonati la acest topic
+		- pe baza id-urilor acestia sunt cautati in map-ul de clienti, unde se verifica
+		statusul lor: daca sunt conectati, update-ul va fi trimis pe loc, daca sunt
+		inactivi, iar in map-ul intern subscriptions topicul apare cu sf = 1, update-ul 
+		se va adauga in coada.
+		
+		d) pe unul dintre socketii tcp destinat primirii de date (nu cel pe care se 
+		asculta conexiuni!)
+		- se primeste un mesaj, reprezentat de o structura de tip msg_tcp
+		- daca clientul s-a inchis (se primeste un nr de bytes = 0), pe baza socket-ului
+		se cauta clientul in map-ul de clienti si se updateaza statusul ca fiind false
+		- altfel, s-a primit o cerere de tip subscribe/unsubscribe
+			-> subscribe: se cauta clientul pe baza id-ului (continut in mesajul
+			primit) in map-ul de clienti si se adauga in map-ul sau de subscriptions
+			o intrare cu key = topicul la care se doreste abonarea, sf = sf-ul primit
+			(daca clientul este deja abonat la acel topic, se face doar actualizarea
+			sf-ului); in map-ul subscribers retinem ca id-ul primit este abonat
+			la topicul specificat 
+			-> unsubscribe : id-ul trebuie sa nu mai figureze ca subscriber pentru
+			topicul specificat, in map-ul de subscribers (va fi sters), precum si
+			topicul trebuie sa dispara din lista de topicuri la care este abonat 
+			acest client
+			
+	Dificultati intampinate:
+	- arhiva cu tema ar fi trebuit sa contina fisierele incluse deja in folderele corespunzatoare;
+	nu era specificat foarte clar cum trebuie aranjate asa ca am petrecut cateva ore bune pe un timeout
+	
+	Referinte:
+	- laboratoarele 6,7,8
+		
+	
+	
